@@ -1,0 +1,77 @@
+variables:
+  TF_VAR_ssh_username: "$TEMPLATE_USERNAME"
+  TF_VAR_ssh_private_key: "$SSH_PRIVATE_KEY"
+
+stages:
+  - validate
+  - plan
+  - deploy
+
+validate:
+  stage: validate
+  image:
+    name: hashicorp/terraform:0.12.7
+    entrypoint: [""]
+  script:
+    - cd src
+    - terraform init -input=false
+    - terraform validate
+  artifacts:
+    paths:
+      - src/.terraform/
+
+.plan_template: &plan
+  stage: plan
+  image:
+    name: hashicorp/terraform:0.12.7
+    entrypoint: [""]
+  script:
+    - cd src
+    - terraform workspace select $WORKSPACE || terraform workspace new $WORKSPACE
+    - terraform plan -out salt.plan
+  artifacts:
+    paths:
+      - src/salt.plan
+
+development_plan:
+  <<: *plan
+  variables:
+    WORKSPACE: "dev"
+    TF_VAR_hosts: "$SALTMASTER_DEVELOPMENT_HOSTS"
+  only:
+    - development
+
+production_plan:
+  <<: *plan
+  variables:
+    WORKSPACE: "prod"
+    TF_VAR_hosts: "$SALTMASTER_PRODUCTION_HOSTS"
+  only:
+    - production
+
+.deploy_template: &deploy
+  stage: deploy
+  image:
+    name: hashicorp/terraform:0.12.7
+    entrypoint: [""]
+  script:
+    - cd src
+    - terraform workspace select $WORKSPACE || terraform workspace new $WORKSPACE
+    - terraform apply -auto-approve salt.plan
+  only:
+    - development
+    - production
+
+development_deploy:
+  <<: *deploy
+  variables:
+    WORKSPACE: "dev"
+  only:
+    - development
+
+production_deploy:
+  <<: *deploy
+  variables:
+    WORKSPACE: "prod"
+  only:
+    - production
